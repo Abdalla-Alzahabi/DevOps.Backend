@@ -1,0 +1,81 @@
+trigger:
+  branches:
+    include:
+      - master
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  buildConfigration: 'Release'
+  dotNetCoreVersion: '8.0.x'  
+  sonarQubeConnection: 'SonarQubeServiceConnection'  # SonarQube service connection
+  azureSubscription: 'AzureSubscription'  # Azure subscription
+  webAppName: 'DevOpsBackend'  #
+
+steps:
+  # Step 1: Checkout the code
+  - task: Checkout@1
+    displayName: 'Checkout the code'
+
+  # Step 2: Install .NET SDK
+  - task: UseDotNet@2
+    inputs:
+      packageType: 'sdk'
+      version: $(dotNetCoreVersion)
+      installationPath: $(Agent.ToolsDirectory)/dotnet
+
+  # Step 3: Restore NuGet packages
+  - script: |
+      dotnet restore "DevOps.TestApp/DevOps.TestApp.csproj"
+    displayName: 'Restore dependencies'
+
+  # Step 4: Build the solution
+  - script: |
+      dotnet build "DevOps.TestApp/DevOps.TestApp.csproj" --configuration $(buildConfigration)
+    displayName: 'Build the application'
+
+  # Step 5: Run Unit Tests
+  - script: |
+      dotnet test "DevOps.TestApp/DevOps.TestApp.csproj" --configuration $(buildConfigration) --no-build
+    displayName: 'Run unit tests'
+
+  # Step 6: SonarQube analysis
+  - task: SonarQubePrepare@5
+    inputs:
+      SonarQube: $(sonarQubeConnection)  # Configure this in Azure DevOps
+      scannerMode: 'MSBuild'
+      projectKey: 'DevOpsTestApp'
+      projectName: 'DevOps Test App'
+  
+  - script: |
+      dotnet build "DevOps.TestApp/DevOps.TestApp.csproj" --configuration $(buildConfigration)
+    displayName: 'Build for SonarQube'
+
+  - task: SonarQubeAnalyze@5
+
+  - task: SonarQubePublish@5
+    inputs:
+      pollingTimeoutSec: '300'
+
+  # Step 7: Publish Artifact
+  - task: PublishPipelineArtifact@1
+    inputs:
+      targetPath: '$(Build.SourcesDirectory)/DevOps.TestApp/bin/$(buildConfigration)/net8.0'
+      artifactName: 'drop'
+      publishLocation: 'pipeline'
+
+  # Step 8: Deploy to Azure App Service
+  - task: AzureWebApp@1
+    inputs:
+      azureSubscription: $(azureSubscription)
+      appType: 'webApp'
+      appName: $(webAppName)
+      package: '$(Build.ArtifactStagingDirectory)/drop'
+  
+  # Step 9: Application Insights integration
+  - task: AzureAppServiceManage@0
+    inputs:
+      azureSubscription: $(azureSubscription)
+      WebAppName: $(webAppName)
+      AppSettings: '-APPINSIGHTS_INSTRUMENTATIONKEY=$(AppInsightsKey)'

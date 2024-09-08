@@ -1,0 +1,6 @@
+@DevOps.TestApp_HostAddress = http://localhost:5214
+
+GET {{DevOps.TestApp_HostAddress}}/product/
+Accept: application/json
+
+###
